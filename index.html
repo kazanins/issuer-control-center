@@ -43,93 +43,193 @@
         </div>
       </header>
 
-      <section class="grid grid--three">
-        <article class="panel" data-stablecoin-selector data-selector-panel hidden>
-          <div class="panel__header">
-            <h2>Selected Stablecoin</h2>
-            <p>Choose the stablecoin to manage on Tempo.</p>
-          </div>
-          <div class="form">
-            <label class="field">
-              <span>Stablecoin</span>
-              <select data-stablecoin-select>
-                <option value="">Select a stablecoin</option>
-              </select>
-            </label>
-          </div>
-          <div class="meta">
-            <div>
-              <span class="meta__label">Stablecoin ID</span>
-              <span class="meta__value" data-selected-stablecoin-id>—</span>
-            </div>
-            <div>
-              <span class="meta__label">Ticker</span>
-              <span class="meta__value" data-selected-stablecoin-ticker>—</span>
-            </div>
-          </div>
-        </article>
+      <section class="card-carousel" aria-label="Issuer workflow cards">
+        <button class="carousel-arrow carousel-arrow--left" type="button" data-carousel-prev>
+          ◀
+        </button>
+        <div class="card-viewport">
+          <div class="card-track" data-card-track>
+            <article class="panel" data-card data-stablecoin-selector data-selector-panel hidden>
+              <div class="panel__header">
+                <h2>Selected Stablecoin</h2>
+                <p>Choose the stablecoin to manage on Tempo.</p>
+              </div>
+              <div class="form">
+                <label class="field">
+                  <span>Stablecoin</span>
+                  <select data-stablecoin-select>
+                    <option value="">Select a stablecoin</option>
+                  </select>
+                </label>
+              </div>
+              <div class="meta">
+                <div>
+                  <span class="meta__label">Stablecoin ID</span>
+                  <span class="meta__value" data-selected-stablecoin-id>—</span>
+                </div>
+                <div>
+                  <span class="meta__label">Ticker</span>
+                  <span class="meta__value" data-selected-stablecoin-ticker>—</span>
+                </div>
+              </div>
+            </article>
 
-        <article class="panel panel--actions" data-grant-panel>
-          <div class="panel__header">
-            <h2 data-grant-title>Grant Issuer Role</h2>
-            <p>Assign mint permissions for the selected stablecoin.</p>
-          </div>
-          <div class="meta">
-            <div>
-              <span class="meta__label">Issuer address</span>
-              <span class="meta__value" data-issuer-address>—</span>
-            </div>
-            <div>
-              <span class="meta__label">Target stablecoin</span>
-              <span class="meta__value" data-issuer-stablecoin>—</span>
-            </div>
-          </div>
-          <div class="panel__footer">
-            <button class="btn btn-primary" type="button" data-grant>
-              Grant Issuer Role
-            </button>
-            <div class="status" data-grant-status>Waiting for stablecoin</div>
-          </div>
-        </article>
+            <article class="panel panel--actions" data-card data-grant-panel>
+              <div class="panel__header">
+                <h2 data-grant-title>Grant Issuer Role</h2>
+                <p>Assign mint permissions for the selected stablecoin.</p>
+              </div>
+              <div class="meta">
+                <div>
+                  <span class="meta__label">Issuer address</span>
+                  <span class="meta__value" data-issuer-address>—</span>
+                </div>
+                <div>
+                  <span class="meta__label">Target stablecoin</span>
+                  <span class="meta__value" data-issuer-stablecoin>—</span>
+                </div>
+              </div>
+              <div class="panel__footer">
+                <button class="btn btn-primary" type="button" data-grant>
+                  Grant Issuer Role
+                </button>
+                <div class="status" data-grant-status>Waiting for stablecoin</div>
+              </div>
+            </article>
 
-        <article class="panel panel--actions" data-mint-panel>
-          <div class="panel__header">
-            <h2>Mint Stablecoins</h2>
-            <p>Issue supply directly into a recipient wallet.</p>
+            <article class="panel panel--actions" data-card data-mint-panel>
+              <div class="panel__header">
+                <h2>Mint Stablecoins</h2>
+                <p>Issue supply directly into a recipient wallet.</p>
+              </div>
+              <form class="form" data-mint-form>
+                <label class="field">
+                  <span>Recipient address</span>
+                  <input
+                    type="text"
+                    name="mintRecipient"
+                    placeholder="0x..."
+                    autocomplete="off"
+                    spellcheck="false"
+                    required
+                    data-mint-recipient
+                  />
+                </label>
+                <label class="field">
+                  <span>Amount</span>
+                  <input
+                    type="number"
+                    name="mintAmount"
+                    placeholder="250000"
+                    min="1"
+                    step="1"
+                    required
+                    data-mint-amount
+                  />
+                </label>
+                <div class="panel__footer">
+                  <button class="btn btn-primary" type="submit" data-mint>
+                    Mint Stablecoins
+                  </button>
+                  <div class="status" data-mint-status>Awaiting issuer role</div>
+                </div>
+              </form>
+            </article>
+
+            <article class="panel panel--actions" data-card data-fee-add-panel>
+              <div class="panel__header">
+                <h2>Add feeAMM liquidity</h2>
+                <p>Add validator token reserves to the fee AMM pool.</p>
+              </div>
+              <div class="form">
+                <label class="field">
+                  <span>Amount / Validator token</span>
+                  <div class="field__group">
+                    <input
+                      type="number"
+                      name="feeAddAmount"
+                      placeholder="100"
+                      min="0"
+                      step="0.000001"
+                      required
+                      data-fee-add-amount
+                    />
+                    <select data-fee-validator-select>
+                      <option value="0x20c0000000000000000000000000000000000001">AlphaUSD</option>
+                      <option value="0x20c0000000000000000000000000000000000000">pathUSD</option>
+                      <option value="0x20c0000000000000000000000000000000000002">BetaUSD</option>
+                      <option value="0x20c0000000000000000000000000000000000003">ThetaUSD</option>
+                    </select>
+                  </div>
+                </label>
+              </div>
+              <div class="meta">
+                <div>
+                  <span class="meta__label">User / Validator reserves</span>
+                  <span class="meta__value" data-fee-reserve>—</span>
+                </div>
+                <div>
+                  <span class="meta__label">LP balance</span>
+                  <span class="meta__value" data-fee-lp-balance>—</span>
+                </div>
+              </div>
+              <div class="panel__footer">
+                <button class="btn btn-primary" type="button" data-fee-add>
+                  Add feeAMM liquidity
+                </button>
+                <div class="status" data-fee-add-status>Awaiting stablecoin</div>
+              </div>
+            </article>
+
+            <article class="panel panel--actions" data-card data-fee-remove-panel>
+              <div class="panel__header">
+                <h2>Remove feeAMM liquidity</h2>
+                <p>Burn LP tokens to remove liquidity from the pool.</p>
+              </div>
+              <div class="form">
+                <label class="field">
+                  <span>LP tokens / Validator token</span>
+                  <div class="field__group">
+                    <input
+                      type="number"
+                      name="feeRemoveAmount"
+                      placeholder="10"
+                      min="0"
+                      step="0.000001"
+                      required
+                      data-fee-remove-amount
+                    />
+                    <select data-fee-validator-select>
+                      <option value="0x20c0000000000000000000000000000000000001">AlphaUSD</option>
+                      <option value="0x20c0000000000000000000000000000000000000">pathUSD</option>
+                      <option value="0x20c0000000000000000000000000000000000002">BetaUSD</option>
+                      <option value="0x20c0000000000000000000000000000000000003">ThetaUSD</option>
+                    </select>
+                  </div>
+                </label>
+              </div>
+              <div class="meta">
+                <div>
+                  <span class="meta__label">User / Validator reserves</span>
+                  <span class="meta__value" data-fee-reserve>—</span>
+                </div>
+                <div>
+                  <span class="meta__label">LP balance</span>
+                  <span class="meta__value" data-fee-lp-balance>—</span>
+                </div>
+              </div>
+              <div class="panel__footer">
+                <button class="btn btn-primary" type="button" data-fee-remove>
+                  Remove feeAMM liquidity
+                </button>
+                <div class="status" data-fee-remove-status>Awaiting stablecoin</div>
+              </div>
+            </article>
           </div>
-          <form class="form" data-mint-form>
-            <label class="field">
-              <span>Recipient address</span>
-              <input
-                type="text"
-                name="mintRecipient"
-                placeholder="0x..."
-                autocomplete="off"
-                spellcheck="false"
-                required
-                data-mint-recipient
-              />
-            </label>
-            <label class="field">
-              <span>Amount</span>
-              <input
-                type="number"
-                name="mintAmount"
-                placeholder="250000"
-                min="1"
-                step="1"
-                required
-                data-mint-amount
-              />
-            </label>
-            <div class="panel__footer">
-              <button class="btn btn-primary" type="submit" data-mint>
-                Mint Stablecoins
-              </button>
-              <div class="status" data-mint-status>Awaiting issuer role</div>
-            </div>
-          </form>
-        </article>
+        </div>
+        <button class="carousel-arrow carousel-arrow--right" type="button" data-carousel-next>
+          ▶
+        </button>
       </section>
 
       <section class="panel panel--wide panel--collapsible is-collapsed" data-activity-panel>

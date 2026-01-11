@@ -6,6 +6,7 @@ import {
   solidityPacked,
   toUtf8Bytes,
   isAddress,
+  formatUnits,
 } from "ethers";
 import confetti from "canvas-confetti";
 import {
@@ -20,7 +21,8 @@ import {
   getPublicClient,
 } from "@wagmi/core";
 import { tempoModerato } from "viem/chains";
-import { KeyManager, webAuthn } from "wagmi/tempo";
+import { Actions as TempoActions } from "viem/tempo";
+import { Actions, KeyManager, webAuthn } from "wagmi/tempo";
 
 const state = {
   account: null,
@@ -35,11 +37,22 @@ const state = {
   stablecoinsLoading: false,
   gateOpen: false,
   mintRecipientAccount: null,
+  feeLiquidity: {
+    validatorToken: "0x20c0000000000000000000000000000000000001",
+    pool: null,
+    lpBalance: null,
+    loading: false,
+    adding: false,
+    removing: false,
+    addStatusLocked: false,
+    removeStatusLocked: false,
+  },
   actions: {
     creating: false,
     granting: false,
     minting: false,
   },
+  carouselIndex: 0,
   messages: {
     create: "Awaiting input",
     grant: "Waiting for stablecoin",
@@ -61,6 +74,16 @@ const TIP20_PREFIX = "20c000000000000000000000";
 const DEFAULT_QUOTE_TOKEN = "0x20c0000000000000000000000000000000000001";
 const DEFAULT_CURRENCY = "USD";
 const DEFAULT_FEE_TOKEN = DEFAULT_QUOTE_TOKEN;
+
+const VALIDATOR_TOKENS = [
+  { label: "pathUSD", address: "0x20c0000000000000000000000000000000000000" },
+  { label: "AlphaUSD", address: "0x20c0000000000000000000000000000000000001" },
+  { label: "BetaUSD", address: "0x20c0000000000000000000000000000000000002" },
+  { label: "ThetaUSD", address: "0x20c0000000000000000000000000000000000003" },
+];
+
+const DEFAULT_VALIDATOR_TOKEN = "0x20c0000000000000000000000000000000000001";
+state.feeLiquidity.validatorToken = DEFAULT_VALIDATOR_TOKEN;
 
 const passkeyConnector = webAuthn({
   keyManager: KeyManager.localStorage(),
@@ -128,6 +151,25 @@ const elements = {
   activity: document.querySelector("[data-activity]"),
   activityPanel: document.querySelector("[data-activity-panel]"),
   activityToggle: document.querySelector("[data-activity-toggle]"),
+  carouselTrack: document.querySelector("[data-card-track]"),
+  carouselPrev: document.querySelector("[data-carousel-prev]"),
+  carouselNext: document.querySelector("[data-carousel-next]"),
+  carouselCards: Array.from(document.querySelectorAll("[data-card]")),
+  feeValidatorSelects: Array.from(
+    document.querySelectorAll("[data-fee-validator-select]")
+  ),
+  feeAddAmount: document.querySelector("[data-fee-add-amount]"),
+  feeRemoveAmount: document.querySelector("[data-fee-remove-amount]"),
+  feeAddButton: document.querySelector("[data-fee-add]"),
+  feeRemoveButton: document.querySelector("[data-fee-remove]"),
+  feeAddStatus: document.querySelector("[data-fee-add-status]"),
+  feeRemoveStatus: document.querySelector("[data-fee-remove-status]"),
+  feeReserveCombined: Array.from(
+    document.querySelectorAll("[data-fee-reserve]")
+  ),
+  feeLpBalance: Array.from(document.querySelectorAll("[data-fee-lp-balance]")),
+  feeAddPanel: document.querySelector("[data-fee-add-panel]"),
+  feeRemovePanel: document.querySelector("[data-fee-remove-panel]"),
 };
 
 function truncateAddress(address) {
@@ -157,6 +199,22 @@ function setMessage(key, message, txHash) {
       : key === "grant"
         ? elements.grantStatus
         : elements.mintStatus;
+  if (!target) return;
+  target.textContent = message;
+  if (txHash) {
+    const spacer = document.createTextNode(" | ");
+    const link = document.createElement("a");
+    link.href = `https://explore.tempo.xyz/tx/${txHash}`;
+    link.textContent = "TX";
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    target.append(spacer, link);
+  }
+}
+
+function setLiquidityStatus(type, message, txHash) {
+  const target =
+    type === "add" ? elements.feeAddStatus : elements.feeRemoveStatus;
   if (!target) return;
   target.textContent = message;
   if (txHash) {
@@ -274,6 +332,10 @@ function setSelectedStablecoin(stablecoinId, { silent = false } = {}) {
         issuerRoleGranted: selected.issuerRoleGranted,
       }
     : null;
+  state.feeLiquidity.pool = null;
+  state.feeLiquidity.lpBalance = null;
+  state.feeLiquidity.addStatusLocked = false;
+  state.feeLiquidity.removeStatusLocked = false;
 
   if (state.stablecoin) {
     setMessage("grant", "Ready to grant issuer role");
@@ -285,6 +347,9 @@ function setSelectedStablecoin(stablecoinId, { silent = false } = {}) {
   }
 
   renderStablecoinOptions();
+  if (state.stablecoin?.id) {
+    void loadFeeLiquidityData();
+  }
   if (!silent) updateUI();
 }
 
@@ -327,6 +392,11 @@ function clearManagedStablecoins() {
   state.selectedStablecoinId = null;
   state.stablecoin = null;
   state.stablecoinsLoading = false;
+  state.feeLiquidity.pool = null;
+  state.feeLiquidity.lpBalance = null;
+  state.feeLiquidity.loading = false;
+  state.feeLiquidity.addStatusLocked = false;
+  state.feeLiquidity.removeStatusLocked = false;
   renderStablecoinOptions();
 }
 
@@ -362,6 +432,54 @@ async function loadManagedStablecoins() {
         silent: true,
       });
     }
+    updateUI();
+  }
+}
+
+function formatLiquidityValue(value) {
+  if (value === null || value === undefined) return "—";
+  return formatUnits(value, 6);
+}
+
+function syncValidatorSelects() {
+  elements.feeValidatorSelects.forEach((select) => {
+    if (select.value !== state.feeLiquidity.validatorToken) {
+      select.value = state.feeLiquidity.validatorToken;
+    }
+  });
+}
+
+async function loadFeeLiquidityData() {
+  if (!state.account || !state.stablecoin?.id) {
+    state.feeLiquidity.pool = null;
+    state.feeLiquidity.lpBalance = null;
+    updateUI();
+    return;
+  }
+  if (state.feeLiquidity.loading) return;
+  state.feeLiquidity.loading = true;
+  updateUI();
+
+  try {
+    const pool = await Actions.amm.getPool(config, {
+      userToken: state.stablecoin.id,
+      validatorToken: state.feeLiquidity.validatorToken,
+      chainId: tempoModerato.id,
+    });
+    const balance = await Actions.amm.getLiquidityBalance(config, {
+      address: state.account,
+      userToken: state.stablecoin.id,
+      validatorToken: state.feeLiquidity.validatorToken,
+      chainId: tempoModerato.id,
+    });
+    state.feeLiquidity.pool = pool;
+    state.feeLiquidity.lpBalance = balance;
+  } catch (error) {
+    console.error("Failed to load fee liquidity data", error);
+    state.feeLiquidity.pool = null;
+    state.feeLiquidity.lpBalance = null;
+  } finally {
+    state.feeLiquidity.loading = false;
     updateUI();
   }
 }
@@ -470,6 +588,98 @@ async function fundAccount(address, { silent = false } = {}) {
   }
 }
 
+async function addFeeLiquidity() {
+  if (!(await ensureSignedIn())) {
+    setLiquidityStatus("add", "Sign in to continue");
+    return;
+  }
+  if (!state.stablecoin?.id) {
+    setLiquidityStatus("add", "Select a stablecoin");
+    return;
+  }
+
+  const amount = Number(elements.feeAddAmount?.value || 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    setLiquidityStatus("add", "Enter a valid amount");
+    return;
+  }
+
+  state.feeLiquidity.adding = true;
+  setLiquidityStatus("add", "Awaiting passkey confirmation");
+  updateUI();
+
+  try {
+    const walletClient = await getWalletClientInstance();
+    const result = await TempoActions.amm.mintSync(walletClient, {
+      account: walletClient.account,
+      userTokenAddress: state.stablecoin.id,
+      validatorTokenAddress: state.feeLiquidity.validatorToken,
+      validatorTokenAmount: parseUnits(String(amount), 6),
+      to: state.account,
+    });
+
+    const hash = result.receipt?.transactionHash;
+    setLiquidityStatus("add", "Liquidity added", hash);
+    state.feeLiquidity.addStatusLocked = true;
+    logActivity("feeAMM liquidity added.");
+    fireConfetti();
+    await loadFeeLiquidityData();
+  } catch (error) {
+    console.error("Add fee liquidity failed", error);
+    setLiquidityStatus("add", "Add liquidity failed");
+    logActivity("feeAMM add liquidity failed.");
+  } finally {
+    state.feeLiquidity.adding = false;
+    updateUI();
+  }
+}
+
+async function removeFeeLiquidity() {
+  if (!(await ensureSignedIn())) {
+    setLiquidityStatus("remove", "Sign in to continue");
+    return;
+  }
+  if (!state.stablecoin?.id) {
+    setLiquidityStatus("remove", "Select a stablecoin");
+    return;
+  }
+
+  const amount = Number(elements.feeRemoveAmount?.value || 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    setLiquidityStatus("remove", "Enter a valid amount");
+    return;
+  }
+
+  state.feeLiquidity.removing = true;
+  setLiquidityStatus("remove", "Awaiting passkey confirmation");
+  updateUI();
+
+  try {
+    const walletClient = await getWalletClientInstance();
+    const result = await TempoActions.amm.burnSync(walletClient, {
+      account: walletClient.account,
+      userToken: state.stablecoin.id,
+      validatorToken: state.feeLiquidity.validatorToken,
+      liquidity: parseUnits(String(amount), 6),
+      to: state.account,
+    });
+
+    const hash = result.receipt?.transactionHash;
+    setLiquidityStatus("remove", "Liquidity removed", hash);
+    state.feeLiquidity.removeStatusLocked = true;
+    logActivity("feeAMM liquidity removed.");
+    fireConfetti();
+    await loadFeeLiquidityData();
+  } catch (error) {
+    console.error("Remove fee liquidity failed", error);
+    setLiquidityStatus("remove", "Remove liquidity failed");
+    logActivity("feeAMM remove liquidity failed.");
+  } finally {
+    state.feeLiquidity.removing = false;
+    updateUI();
+  }
+}
+
 function addManagedStablecoin(stablecoin) {
   if (!stablecoin?.id) return;
   const normalizedId = stablecoin.id.toLowerCase();
@@ -501,6 +711,26 @@ async function getWalletClientInstance() {
   const client = await getWalletClient(config);
   if (!client) throw new Error("No passkey wallet client");
   return client;
+}
+
+function updateCarousel() {
+  const track = elements.carouselTrack;
+  const cards = elements.carouselCards;
+  if (!track || cards.length === 0) return;
+  const gap = Number.parseFloat(getComputedStyle(track).gap) || 0;
+  const viewport = track.parentElement;
+  const viewportWidth = viewport?.getBoundingClientRect().width || 0;
+  if (!viewportWidth) return;
+  const cardWidth = (viewportWidth - gap * 2) / 3;
+  const maxIndex = Math.max(0, cards.length - 3);
+  if (state.carouselIndex > maxIndex) state.carouselIndex = maxIndex;
+  track.style.transform = `translateX(-${(cardWidth + gap) * state.carouselIndex}px)`;
+  if (elements.carouselPrev) {
+    elements.carouselPrev.disabled = state.carouselIndex <= 0;
+  }
+  if (elements.carouselNext) {
+    elements.carouselNext.disabled = state.carouselIndex >= maxIndex;
+  }
 }
 
 async function sendTransaction({ to, data, value }) {
@@ -683,6 +913,73 @@ function updateUI() {
     elements.selectedStablecoinTicker.textContent = state.stablecoin?.ticker || "—";
   }
 
+  syncValidatorSelects();
+
+  const liquidityReady = connected && hasStablecoin && !actionsBlocked;
+  if (!connected || !hasStablecoin) {
+    state.feeLiquidity.addStatusLocked = false;
+    state.feeLiquidity.removeStatusLocked = false;
+  }
+  const reserveUserText = state.feeLiquidity.loading
+    ? "Loading..."
+    : formatLiquidityValue(state.feeLiquidity.pool?.reserveUserToken);
+  const reserveValidatorText = state.feeLiquidity.loading
+    ? "Loading..."
+    : formatLiquidityValue(state.feeLiquidity.pool?.reserveValidatorToken);
+  const lpBalanceText = state.feeLiquidity.loading
+    ? "Loading..."
+    : formatLiquidityValue(state.feeLiquidity.lpBalance ?? null);
+  const reserveCombinedText = state.feeLiquidity.loading
+    ? "Loading..."
+    : `${reserveUserText} / ${reserveValidatorText}`;
+
+  elements.feeReserveCombined.forEach((node) => {
+    node.textContent = reserveCombinedText;
+  });
+  elements.feeLpBalance.forEach((node) => {
+    node.textContent = lpBalanceText;
+  });
+
+  if (elements.feeAddPanel) {
+    elements.feeAddPanel.classList.toggle("panel--disabled", !liquidityReady);
+  }
+  if (elements.feeRemovePanel) {
+    elements.feeRemovePanel.classList.toggle("panel--disabled", !liquidityReady);
+  }
+  if (elements.feeAddButton) {
+    elements.feeAddButton.disabled =
+      !liquidityReady || state.feeLiquidity.loading || state.feeLiquidity.adding;
+  }
+  if (elements.feeRemoveButton) {
+    elements.feeRemoveButton.disabled =
+      !liquidityReady || state.feeLiquidity.loading || state.feeLiquidity.removing;
+  }
+
+  if (!state.feeLiquidity.adding && !state.feeLiquidity.addStatusLocked) {
+    if (!connected) {
+      setLiquidityStatus("add", "Sign in to continue");
+    } else if (!hasStablecoin) {
+      setLiquidityStatus("add", "Select a stablecoin");
+    } else if (state.feeLiquidity.loading) {
+      setLiquidityStatus("add", "Loading pool data");
+    } else {
+      setLiquidityStatus("add", "Ready to add liquidity");
+    }
+  }
+
+  if (!state.feeLiquidity.removing && !state.feeLiquidity.removeStatusLocked) {
+    if (!connected) {
+      setLiquidityStatus("remove", "Sign in to continue");
+    } else if (!hasStablecoin) {
+      setLiquidityStatus("remove", "Select a stablecoin");
+    } else if (state.feeLiquidity.loading) {
+      setLiquidityStatus("remove", "Loading pool data");
+    } else {
+      setLiquidityStatus("remove", "Ready to remove liquidity");
+    }
+  }
+
+
   if (state.stablecoin?.issuerRoleGranted) {
     setMessage("grant", "Issuer role granted");
   }
@@ -701,6 +998,7 @@ function updateUI() {
 
   renderStablecoinOptions();
   syncMintRecipient();
+  updateCarousel();
 }
 
 function resetWorkflow() {
@@ -1209,6 +1507,35 @@ async function init() {
       setSelectedStablecoin(target.value);
     });
   }
+  elements.feeValidatorSelects.forEach((select) => {
+    select.value = state.feeLiquidity.validatorToken;
+    select.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLSelectElement)) return;
+      state.feeLiquidity.validatorToken = target.value;
+      state.feeLiquidity.addStatusLocked = false;
+      state.feeLiquidity.removeStatusLocked = false;
+      syncValidatorSelects();
+      void loadFeeLiquidityData();
+      updateUI();
+    });
+  });
+  if (elements.feeAddButton) {
+    elements.feeAddButton.addEventListener("click", addFeeLiquidity);
+  }
+  if (elements.feeRemoveButton) {
+    elements.feeRemoveButton.addEventListener("click", removeFeeLiquidity);
+  }
+  if (elements.feeAddAmount) {
+    elements.feeAddAmount.addEventListener("input", () => {
+      state.feeLiquidity.addStatusLocked = false;
+    });
+  }
+  if (elements.feeRemoveAmount) {
+    elements.feeRemoveAmount.addEventListener("input", () => {
+      state.feeLiquidity.removeStatusLocked = false;
+    });
+  }
   elements.createForm.addEventListener("submit", createStablecoin);
   elements.grantButton.addEventListener("click", () => {
     if (state.stablecoin?.issuerRoleGranted) {
@@ -1231,6 +1558,22 @@ async function init() {
   elements.stablecoinTickerInput.addEventListener("input", (event) => {
     event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
   });
+
+  if (elements.carouselPrev) {
+    elements.carouselPrev.addEventListener("click", () => {
+      state.carouselIndex = Math.max(0, state.carouselIndex - 1);
+      updateCarousel();
+    });
+  }
+  if (elements.carouselNext) {
+    elements.carouselNext.addEventListener("click", () => {
+      const maxIndex = Math.max(0, elements.carouselCards.length - 3);
+      state.carouselIndex = Math.min(maxIndex, state.carouselIndex + 1);
+      updateCarousel();
+    });
+  }
+  window.addEventListener("resize", updateCarousel);
+  updateCarousel();
 
   if (elements.activityToggle) {
     elements.activityToggle.addEventListener("click", () => {
