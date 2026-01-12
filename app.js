@@ -1394,28 +1394,30 @@ async function createStablecoin(event) {
     if (createdToken) {
       state.stablecoin.id = createdToken;
     }
-    if (
-      receipt?.status === "0x1" ||
-      receipt?.status === 1 ||
-      receipt?.status === "success"
-    ) {
-      setMessage("create", "Stablecoin created", state.lastTx.create);
-      setMessage("grant", "Ready to grant issuer role");
-      logActivity(
-        `Stablecoin created: ${truncateValue(state.stablecoin.id || stablecoinId)}.`
-      );
-      fireConfetti();
-      try {
-        await persistManagedStablecoin(state.stablecoin);
+      if (
+        receipt?.status === "0x1" ||
+        receipt?.status === 1 ||
+        receipt?.status === "success"
+      ) {
+        setMessage("create", "Stablecoin created", state.lastTx.create);
+        setMessage("grant", "Ready to grant issuer role");
+        logActivity(
+          `Stablecoin created: ${truncateValue(state.stablecoin.id || stablecoinId)}.`
+        );
+        fireConfetti();
         addManagedStablecoin(state.stablecoin);
-      } catch (error) {
-        console.error("Failed to store stablecoin", error);
+        try {
+          await persistManagedStablecoin(state.stablecoin);
+        } catch (error) {
+          console.error("Failed to store stablecoin", error);
+          logActivity("Stablecoin saved locally but failed to persist.");
+        }
+      } else if (receipt === null) {
+        setMessage("create", "Submitted. Confirm in explorer.", state.lastTx.create);
+      } else {
+        setMessage("create", "Transaction pending");
       }
-    } else if (receipt === null) {
-      setMessage("create", "Submitted. Confirm in explorer.", state.lastTx.create);
-    } else {
-      setMessage("create", "Transaction pending");
-    }
+
   } catch (error) {
     console.error("Create stablecoin failed", error);
     setMessage("create", "Create request failed");
