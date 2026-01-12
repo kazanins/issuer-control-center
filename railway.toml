@@ -1,6 +1,9 @@
 [build]
   builder = "NIXPACKS"
 
+[env]
+  DB_PATH = "/data/stablecoins.db"
+
 [deploy]
   startCommand = "npm start"
   healthcheckPath = "/health"

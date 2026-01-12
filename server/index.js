@@ -10,8 +10,10 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 8787;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
-const DB_PATH =
-  process.env.DB_PATH || path.join(__dirname, "data", "stablecoins.db");
+const defaultDbPath = process.env.RAILWAY_ENVIRONMENT
+  ? "/data/stablecoins.db"
+  : path.join(__dirname, "data", "stablecoins.db");
+const DB_PATH = process.env.DB_PATH || defaultDbPath;
 
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 

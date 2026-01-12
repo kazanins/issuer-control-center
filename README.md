@@ -39,7 +39,7 @@ The frontend expects the backend at `http://localhost:8787` by default.
 
 - `PORT` — Port for the Express server (default: `8787`).
 - `CLIENT_ORIGIN` — Allowed CORS origin (default: `http://localhost:5173`).
-- `DB_PATH` — SQLite DB file path (default: `server/data/stablecoins.db`).
+- `DB_PATH` — SQLite DB file path (default: `server/data/stablecoins.db`, Railway: `/data/stablecoins.db`).
 
 ## API Endpoints
 
@@ -55,4 +55,4 @@ Recommended Railway variables:
 
 - `PORT` (Railway sets this automatically)
 - `CLIENT_ORIGIN` (your deployed frontend URL)
-- `DB_PATH` (optional, defaults to `server/data/stablecoins.db`)
+- `DB_PATH` (`/data/stablecoins.db` if using a Railway volume)
