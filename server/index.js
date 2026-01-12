@@ -10,10 +10,13 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 8787;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+const isProduction =
+  process.env.NODE_ENV === "production" || Boolean(process.env.RAILWAY_ENVIRONMENT);
 const defaultDbPath = process.env.RAILWAY_ENVIRONMENT
   ? "/data/stablecoins.db"
   : path.join(__dirname, "data", "stablecoins.db");
 const DB_PATH = process.env.DB_PATH || defaultDbPath;
+let distPath = null;
 
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
@@ -60,6 +63,11 @@ app.use(
   })
 );
 app.use(express.json());
+
+if (isProduction) {
+  distPath = path.resolve(__dirname, "..", "dist");
+  app.use(express.static(distPath));
+}
 
 function isAddress(value) {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
@@ -146,7 +154,11 @@ app.patch("/stablecoins/:stablecoinId", (req, res) => {
       ? 1
       : Number(Boolean(req.body.issuerRoleGranted));
 
-  if (!isAddress(stablecoinId) || !isAddress(issuerAddress) || !Number.isInteger(chainId)) {
+  if (
+    !isAddress(stablecoinId) ||
+    !isAddress(issuerAddress) ||
+    !Number.isInteger(chainId)
+  ) {
     return res.status(400).json({ error: "Invalid payload" });
   }
 
@@ -169,6 +181,12 @@ app.patch("/stablecoins/:stablecoinId", (req, res) => {
     return res.status(500).json({ error: "Failed to update stablecoin" });
   }
 });
+
+if (isProduction && distPath) {
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(distPath, "index.html"));
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`Stablecoin registry listening on ${PORT}`);

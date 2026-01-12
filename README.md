@@ -49,10 +49,12 @@ The frontend expects the backend at `http://localhost:8787` by default.
 
 ## Deployment (Railway)
 
-Deploy the backend service with the included `railway.toml`.
+Deploy the backend + frontend service with the included `railway.toml`.
 
 Recommended Railway variables:
 
 - `PORT` (Railway sets this automatically)
 - `CLIENT_ORIGIN` (your deployed frontend URL)
 - `DB_PATH` (`/data/stablecoins.db` if using a Railway volume)
+
+Railway will run `npm run build` to generate the Vite UI and serve it from `/`.
