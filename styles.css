@@ -400,6 +400,13 @@ body {
   background: #fff;
 }
 
+.field__hint {
+  font-size: 0.75rem;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
 .field--inline {
   display: grid;
   gap: var(--space-1);

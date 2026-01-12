@@ -34,6 +34,7 @@ const state = {
   stablecoin: null,
   managedStablecoins: [],
   selectedStablecoinId: null,
+  stablecoinBalance: null,
   stablecoinsLoading: false,
   gateOpen: false,
   mintRecipientAccount: null,
@@ -136,6 +137,9 @@ const elements = {
   selectedStablecoinId: document.querySelector("[data-selected-stablecoin-id]"),
   selectedStablecoinTicker: document.querySelector(
     "[data-selected-stablecoin-ticker]"
+  ),
+  selectedStablecoinBalance: document.querySelector(
+    "[data-selected-stablecoin-balance]"
   ),
   createGate: document.querySelector("[data-create-gate]"),
   createForm: document.querySelector("[data-create-form]"),
@@ -367,6 +371,7 @@ function setSelectedStablecoin(stablecoinId, { silent = false } = {}) {
   state.alphaTransfer.poolReady = false;
   state.alphaTransfer.pending = false;
   state.alphaTransfer.statusLocked = false;
+  state.stablecoinBalance = null;
 
   if (state.stablecoin) {
     setMessage("grant", "Ready to grant issuer role");
@@ -376,6 +381,7 @@ function setSelectedStablecoin(stablecoinId, { silent = false } = {}) {
       setMessage("mint", "Awaiting issuer role grant");
     }
     void loadAlphaPoolReady();
+    void loadSelectedStablecoinBalance();
   } else {
     state.alphaTransfer.poolReady = false;
   }
@@ -432,11 +438,43 @@ function clearManagedStablecoins() {
   state.alphaTransfer.poolReady = false;
   state.alphaTransfer.pending = false;
   state.alphaTransfer.statusLocked = false;
+  state.stablecoinBalance = null;
   renderStablecoinOptions();
 }
 
 
+async function loadSelectedStablecoinBalance() {
+  if (!state.account || !state.stablecoin?.id) {
+    state.stablecoinBalance = null;
+    updateUI();
+    return;
+  }
+  try {
+    const publicClient = getPublicClient(config);
+    if (!publicClient) {
+      state.stablecoinBalance = null;
+      updateUI();
+      return;
+    }
+    const response = await publicClient.call({
+      to: state.stablecoin.id,
+      data: tip20Interface.encodeFunctionData("balanceOf", [state.account]),
+    });
+    const decoded = tip20Interface.decodeFunctionResult(
+      "balanceOf",
+      response.data
+    );
+    state.stablecoinBalance = Array.isArray(decoded) ? decoded[0] : decoded;
+  } catch (error) {
+    console.error("Failed to load stablecoin balance", error);
+    state.stablecoinBalance = null;
+  }
+  updateUI();
+}
+
+
 async function loadManagedStablecoins() {
+
   if (!state.account) {
     clearManagedStablecoins();
     return;
@@ -1040,6 +1078,19 @@ function updateUI() {
     elements.selectedStablecoinTicker.textContent = state.stablecoin?.ticker || "—";
   }
 
+  if (elements.selectedStablecoinBalance) {
+    if (state.stablecoin?.id) {
+      const balanceText =
+        state.stablecoinBalance === null
+          ? "—"
+          : formatUnits(state.stablecoinBalance, 6);
+      const tickerText = state.stablecoin?.ticker || "—";
+      elements.selectedStablecoinBalance.textContent = `${balanceText} ${tickerText}`;
+    } else {
+      elements.selectedStablecoinBalance.textContent = "—";
+    }
+  }
+
   const liquidityReady = connected && hasStablecoin && !actionsBlocked;
   if (!connected || !hasStablecoin) {
     state.feeLiquidity.addStatusLocked = false;
@@ -1299,6 +1350,7 @@ function handleAccountChange(account) {
   }
   updateUI();
   loadManagedStablecoins();
+  void loadSelectedStablecoinBalance();
 }
 
 async function ensureSignedIn() {

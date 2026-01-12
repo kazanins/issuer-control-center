@@ -71,6 +71,10 @@
                   <span class="meta__label">Ticker</span>
                   <span class="meta__value" data-selected-stablecoin-ticker>—</span>
                 </div>
+                <div>
+                  <span class="meta__label">Your balance</span>
+                  <span class="meta__value" data-selected-stablecoin-balance>—</span>
+                </div>
               </div>
             </article>
 
@@ -143,7 +147,7 @@
               </div>
               <div class="form">
                 <label class="field">
-                  <span>Amount</span>
+                  <span>pathUSD amount</span>
                   <input
                     type="number"
                     name="feeAddAmount"
@@ -153,20 +157,15 @@
                     required
                     data-fee-add-amount
                   />
+                  <span class="field__hint">
+                    Available: <span data-fee-balance>—</span> pathUSD
+                  </span>
                 </label>
-                <div class="field field--inline">
-                  <span>Validator token</span>
-                  <div class="field__value">pathUSD</div>
-                </div>
               </div>
               <div class="meta">
                 <div>
                   <span class="meta__label">User / Validator reserves</span>
                   <span class="meta__value" data-fee-reserve>—</span>
-                </div>
-                <div>
-                  <span class="meta__label">pathUSD balance</span>
-                  <span class="meta__value" data-fee-balance>—</span>
                 </div>
                 <div>
                   <span class="meta__label">LP balance</span>
@@ -198,11 +197,10 @@
                     required
                     data-fee-remove-amount
                   />
+                  <span class="field__hint">
+                    Available: <span data-fee-lp-balance>—</span> LP tokens
+                  </span>
                 </label>
-                <div class="field field--inline">
-                  <span>Validator token</span>
-                  <div class="field__value">pathUSD</div>
-                </div>
               </div>
               <div class="meta">
                 <div>
@@ -212,10 +210,6 @@
                 <div>
                   <span class="meta__label">pathUSD balance</span>
                   <span class="meta__value" data-fee-balance>—</span>
-                </div>
-                <div>
-                  <span class="meta__label">LP balance</span>
-                  <span class="meta__value" data-fee-lp-balance>—</span>
                 </div>
               </div>
               <div class="panel__footer">
