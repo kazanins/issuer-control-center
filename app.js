@@ -38,14 +38,21 @@ const state = {
   gateOpen: false,
   mintRecipientAccount: null,
   feeLiquidity: {
-    validatorToken: "0x20c0000000000000000000000000000000000001",
+    validatorToken: "0x20c0000000000000000000000000000000000000",
     pool: null,
     lpBalance: null,
+    balance: null,
     loading: false,
     adding: false,
     removing: false,
     addStatusLocked: false,
     removeStatusLocked: false,
+  },
+  alphaTransfer: {
+    amount: 50,
+    pending: false,
+    poolReady: false,
+    statusLocked: false,
   },
   actions: {
     creating: false,
@@ -65,6 +72,7 @@ const state = {
   },
 };
 
+
 const AUTH_STORAGE_KEY = "tempoAuth";
 const AUTH_WAGMI_STORAGE_KEY = "wagmi.store";
 
@@ -75,15 +83,14 @@ const DEFAULT_QUOTE_TOKEN = "0x20c0000000000000000000000000000000000001";
 const DEFAULT_CURRENCY = "USD";
 const DEFAULT_FEE_TOKEN = DEFAULT_QUOTE_TOKEN;
 
-const VALIDATOR_TOKENS = [
-  { label: "pathUSD", address: "0x20c0000000000000000000000000000000000000" },
-  { label: "AlphaUSD", address: "0x20c0000000000000000000000000000000000001" },
-  { label: "BetaUSD", address: "0x20c0000000000000000000000000000000000002" },
-  { label: "ThetaUSD", address: "0x20c0000000000000000000000000000000000003" },
-];
+const tip20Interface = new Interface([
+  "function balanceOf(address account) view returns (uint256)",
+]);
 
-const DEFAULT_VALIDATOR_TOKEN = "0x20c0000000000000000000000000000000000001";
-state.feeLiquidity.validatorToken = DEFAULT_VALIDATOR_TOKEN;
+const PATH_USD_TOKEN = "0x20c0000000000000000000000000000000000000";
+const ALPHA_USD_TOKEN = "0x20c0000000000000000000000000000000000001";
+const DEFAULT_ALPHA_RECIPIENT =
+  "0x67448a00f45357066d4de7936BfBB2D5456bb5CB";
 
 const passkeyConnector = webAuthn({
   keyManager: KeyManager.localStorage(),
@@ -110,6 +117,7 @@ const tip20TokenInterface = new Interface([
   "function grantRole(bytes32 role,address account) external",
   "function revokeRole(bytes32 role,address account) external",
   "function mint(address to,uint256 amount) external",
+  "function transfer(address to,uint256 amount) external returns (bool)",
 ]);
 
 const elements = {
@@ -154,10 +162,7 @@ const elements = {
   carouselTrack: document.querySelector("[data-card-track]"),
   carouselPrev: document.querySelector("[data-carousel-prev]"),
   carouselNext: document.querySelector("[data-carousel-next]"),
-  carouselCards: Array.from(document.querySelectorAll("[data-card]")),
-  feeValidatorSelects: Array.from(
-    document.querySelectorAll("[data-fee-validator-select]")
-  ),
+  carouselCards: [],
   feeAddAmount: document.querySelector("[data-fee-add-amount]"),
   feeRemoveAmount: document.querySelector("[data-fee-remove-amount]"),
   feeAddButton: document.querySelector("[data-fee-add]"),
@@ -167,9 +172,17 @@ const elements = {
   feeReserveCombined: Array.from(
     document.querySelectorAll("[data-fee-reserve]")
   ),
+  feeBalance: Array.from(document.querySelectorAll("[data-fee-balance]")),
   feeLpBalance: Array.from(document.querySelectorAll("[data-fee-lp-balance]")),
   feeAddPanel: document.querySelector("[data-fee-add-panel]"),
   feeRemovePanel: document.querySelector("[data-fee-remove-panel]"),
+  alphaAmountButtons: Array.from(
+    document.querySelectorAll("[data-alpha-amount]")
+  ),
+  alphaRecipientInput: document.querySelector("[data-alpha-recipient]"),
+  alphaSendButton: document.querySelector("[data-alpha-send]"),
+  alphaStatus: document.querySelector("[data-alpha-status]"),
+  alphaTransferPanel: document.querySelector("[data-alpha-transfer-panel]"),
 };
 
 function truncateAddress(address) {
@@ -225,6 +238,20 @@ function setLiquidityStatus(type, message, txHash) {
     link.target = "_blank";
     link.rel = "noreferrer";
     target.append(spacer, link);
+  }
+}
+
+function setAlphaStatus(message, txHash) {
+  if (!elements.alphaStatus) return;
+  elements.alphaStatus.textContent = message;
+  if (txHash) {
+    const spacer = document.createTextNode(" | ");
+    const link = document.createElement("a");
+    link.href = `https://explore.tempo.xyz/tx/${txHash}`;
+    link.textContent = "TX";
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    elements.alphaStatus.append(spacer, link);
   }
 }
 
@@ -334,8 +361,12 @@ function setSelectedStablecoin(stablecoinId, { silent = false } = {}) {
     : null;
   state.feeLiquidity.pool = null;
   state.feeLiquidity.lpBalance = null;
+  state.feeLiquidity.balance = null;
   state.feeLiquidity.addStatusLocked = false;
   state.feeLiquidity.removeStatusLocked = false;
+  state.alphaTransfer.poolReady = false;
+  state.alphaTransfer.pending = false;
+  state.alphaTransfer.statusLocked = false;
 
   if (state.stablecoin) {
     setMessage("grant", "Ready to grant issuer role");
@@ -344,12 +375,12 @@ function setSelectedStablecoin(stablecoinId, { silent = false } = {}) {
     } else {
       setMessage("mint", "Awaiting issuer role grant");
     }
+    void loadAlphaPoolReady();
+  } else {
+    state.alphaTransfer.poolReady = false;
   }
 
   renderStablecoinOptions();
-  if (state.stablecoin?.id) {
-    void loadFeeLiquidityData();
-  }
   if (!silent) updateUI();
 }
 
@@ -394,11 +425,16 @@ function clearManagedStablecoins() {
   state.stablecoinsLoading = false;
   state.feeLiquidity.pool = null;
   state.feeLiquidity.lpBalance = null;
+  state.feeLiquidity.balance = null;
   state.feeLiquidity.loading = false;
   state.feeLiquidity.addStatusLocked = false;
   state.feeLiquidity.removeStatusLocked = false;
+  state.alphaTransfer.poolReady = false;
+  state.alphaTransfer.pending = false;
+  state.alphaTransfer.statusLocked = false;
   renderStablecoinOptions();
 }
+
 
 async function loadManagedStablecoins() {
   if (!state.account) {
@@ -441,18 +477,12 @@ function formatLiquidityValue(value) {
   return formatUnits(value, 6);
 }
 
-function syncValidatorSelects() {
-  elements.feeValidatorSelects.forEach((select) => {
-    if (select.value !== state.feeLiquidity.validatorToken) {
-      select.value = state.feeLiquidity.validatorToken;
-    }
-  });
-}
 
 async function loadFeeLiquidityData() {
   if (!state.account || !state.stablecoin?.id) {
     state.feeLiquidity.pool = null;
     state.feeLiquidity.lpBalance = null;
+    state.feeLiquidity.balance = null;
     updateUI();
     return;
   }
@@ -472,14 +502,28 @@ async function loadFeeLiquidityData() {
       validatorToken: state.feeLiquidity.validatorToken,
       chainId: tempoModerato.id,
     });
+    const publicClient = getPublicClient(config);
+    if (publicClient) {
+      const feeBalance = await publicClient.call({
+        to: state.feeLiquidity.validatorToken,
+        data: tip20Interface.encodeFunctionData("balanceOf", [state.account]),
+      });
+      const decoded = tip20Interface.decodeFunctionResult(
+        "balanceOf",
+        feeBalance.data
+      );
+      state.feeLiquidity.balance = Array.isArray(decoded) ? decoded[0] : decoded;
+    }
     state.feeLiquidity.pool = pool;
     state.feeLiquidity.lpBalance = balance;
   } catch (error) {
     console.error("Failed to load fee liquidity data", error);
     state.feeLiquidity.pool = null;
     state.feeLiquidity.lpBalance = null;
+    state.feeLiquidity.balance = null;
   } finally {
     state.feeLiquidity.loading = false;
+    await loadAlphaPoolReady();
     updateUI();
   }
 }
@@ -610,6 +654,16 @@ async function addFeeLiquidity() {
 
   try {
     const walletClient = await getWalletClientInstance();
+    if (state.feeLiquidity.balance !== null) {
+      const required = parseUnits(String(amount), 6);
+      if (state.feeLiquidity.balance < required) {
+        setLiquidityStatus("add", "Insufficient pathUSD balance");
+        state.feeLiquidity.adding = false;
+        updateUI();
+        return;
+      }
+    }
+
     const result = await TempoActions.amm.mintSync(walletClient, {
       account: walletClient.account,
       userTokenAddress: state.stablecoin.id,
@@ -680,6 +734,76 @@ async function removeFeeLiquidity() {
   }
 }
 
+async function loadAlphaPoolReady() {
+  if (!state.stablecoin?.id) {
+    state.alphaTransfer.poolReady = false;
+    return;
+  }
+  try {
+    const pool = await Actions.amm.getPool(config, {
+      userToken: state.stablecoin.id,
+      validatorToken: PATH_USD_TOKEN,
+      chainId: tempoModerato.id,
+    });
+    state.alphaTransfer.poolReady =
+      pool.reserveValidatorToken > 0n || pool.totalSupply > 0n;
+  } catch (error) {
+    console.error("Failed to load AlphaUSD pool", error);
+    state.alphaTransfer.poolReady = false;
+  } finally {
+    updateUI();
+  }
+}
+
+async function sendAlphaUsd() {
+  if (!(await ensureSignedIn())) {
+    setAlphaStatus("Sign in to continue");
+    return;
+  }
+  if (!state.stablecoin?.id) {
+    setAlphaStatus("Select a stablecoin for fees");
+    return;
+  }
+  if (!state.alphaTransfer.poolReady) {
+    setAlphaStatus("Pool needs liquidity with pathUSD");
+    return;
+  }
+
+  const recipient = elements.alphaRecipientInput?.value.trim() || "";
+  if (!isAddress(recipient)) {
+    setAlphaStatus("Enter a valid address");
+    return;
+  }
+
+  const amount = state.alphaTransfer.amount;
+  state.alphaTransfer.pending = true;
+  setAlphaStatus("Awaiting passkey confirmation");
+  updateUI();
+
+  try {
+    const transferData = tip20TokenInterface.encodeFunctionData("transfer", [
+      recipient,
+      parseUnits(String(amount), 6),
+    ]);
+    const hash = await sendTransaction({
+      to: ALPHA_USD_TOKEN,
+      data: transferData,
+      feeToken: state.stablecoin.id,
+    });
+    setAlphaStatus("AlphaUSD sent", hash);
+    state.alphaTransfer.statusLocked = true;
+    logActivity("AlphaUSD transfer submitted.");
+    fireConfetti();
+  } catch (error) {
+    console.error("AlphaUSD transfer failed", error);
+    setAlphaStatus("Transfer failed");
+    logActivity("AlphaUSD transfer failed.");
+  } finally {
+    state.alphaTransfer.pending = false;
+    updateUI();
+  }
+}
+
 function addManagedStablecoin(stablecoin) {
   if (!stablecoin?.id) return;
   const normalizedId = stablecoin.id.toLowerCase();
@@ -715,8 +839,9 @@ async function getWalletClientInstance() {
 
 function updateCarousel() {
   const track = elements.carouselTrack;
-  const cards = elements.carouselCards;
-  if (!track || cards.length === 0) return;
+  if (!track) return;
+  const cards = Array.from(track.querySelectorAll("[data-card]"));
+  if (cards.length === 0) return;
   const gap = Number.parseFloat(getComputedStyle(track).gap) || 0;
   const viewport = track.parentElement;
   const viewportWidth = viewport?.getBoundingClientRect().width || 0;
@@ -724,7 +849,8 @@ function updateCarousel() {
   const cardWidth = (viewportWidth - gap * 2) / 3;
   const maxIndex = Math.max(0, cards.length - 3);
   if (state.carouselIndex > maxIndex) state.carouselIndex = maxIndex;
-  track.style.transform = `translateX(-${(cardWidth + gap) * state.carouselIndex}px)`;
+  const offset = (cardWidth + gap) * state.carouselIndex;
+  track.style.transform = `translate3d(-${offset}px, 0, 0)`;
   if (elements.carouselPrev) {
     elements.carouselPrev.disabled = state.carouselIndex <= 0;
   }
@@ -733,7 +859,7 @@ function updateCarousel() {
   }
 }
 
-async function sendTransaction({ to, data, value }) {
+async function sendTransaction({ to, data, value, feeToken }) {
   const client = await getWalletClientInstance();
   const from = client.account?.address;
   if (!from) throw new Error("No connected account");
@@ -746,7 +872,7 @@ async function sendTransaction({ to, data, value }) {
     to,
     data,
     value,
-    feeToken: DEFAULT_FEE_TOKEN,
+    feeToken: feeToken || DEFAULT_FEE_TOKEN,
   });
 }
 
@@ -890,6 +1016,7 @@ function updateUI() {
   if (!connected) {
     setMessage("grant", "Sign in to continue");
     setMessage("mint", "Sign in to continue");
+    setAlphaStatus("Sign in to continue");
   } else if (state.stablecoin?.issuerRoleGranted) {
     setMessage("grant", "Issuer role granted");
   }
@@ -913,8 +1040,6 @@ function updateUI() {
     elements.selectedStablecoinTicker.textContent = state.stablecoin?.ticker || "—";
   }
 
-  syncValidatorSelects();
-
   const liquidityReady = connected && hasStablecoin && !actionsBlocked;
   if (!connected || !hasStablecoin) {
     state.feeLiquidity.addStatusLocked = false;
@@ -932,9 +1057,15 @@ function updateUI() {
   const reserveCombinedText = state.feeLiquidity.loading
     ? "Loading..."
     : `${reserveUserText} / ${reserveValidatorText}`;
+  const balanceText = state.feeLiquidity.loading
+    ? "Loading..."
+    : formatLiquidityValue(state.feeLiquidity.balance ?? null);
 
   elements.feeReserveCombined.forEach((node) => {
     node.textContent = reserveCombinedText;
+  });
+  elements.feeBalance.forEach((node) => {
+    node.textContent = balanceText;
   });
   elements.feeLpBalance.forEach((node) => {
     node.textContent = lpBalanceText;
@@ -947,21 +1078,58 @@ function updateUI() {
     elements.feeRemovePanel.classList.toggle("panel--disabled", !liquidityReady);
   }
   if (elements.feeAddButton) {
+    const amountValue = Number(elements.feeAddAmount?.value || 0);
+    const amountValid = Number.isFinite(amountValue) && amountValue > 0;
+    const balanceReady =
+      state.feeLiquidity.balance === null ||
+      state.feeLiquidity.balance >= parseUnits(String(amountValue || 0), 6);
     elements.feeAddButton.disabled =
-      !liquidityReady || state.feeLiquidity.loading || state.feeLiquidity.adding;
+      !liquidityReady ||
+      state.feeLiquidity.loading ||
+      state.feeLiquidity.adding ||
+      !amountValid ||
+      !balanceReady;
   }
   if (elements.feeRemoveButton) {
     elements.feeRemoveButton.disabled =
       !liquidityReady || state.feeLiquidity.loading || state.feeLiquidity.removing;
   }
+  if (elements.alphaSendButton) {
+    const recipientValid = isAddress(
+      elements.alphaRecipientInput?.value.trim() || ""
+    );
+    elements.alphaSendButton.disabled =
+      !connected ||
+      !hasStablecoin ||
+      !recipientValid ||
+      !state.alphaTransfer.poolReady ||
+      state.alphaTransfer.pending;
+  }
+
+  if (elements.alphaTransferPanel) {
+    elements.alphaTransferPanel.classList.toggle(
+      "panel--disabled",
+      !connected || !hasStablecoin
+    );
+  }
 
   if (!state.feeLiquidity.adding && !state.feeLiquidity.addStatusLocked) {
+    const amountValue = Number(elements.feeAddAmount?.value || 0);
+    const amountValid = Number.isFinite(amountValue) && amountValue > 0;
+    const balanceEnough =
+      state.feeLiquidity.balance === null ||
+      state.feeLiquidity.balance >= parseUnits(String(amountValue || 0), 6);
+
     if (!connected) {
       setLiquidityStatus("add", "Sign in to continue");
     } else if (!hasStablecoin) {
       setLiquidityStatus("add", "Select a stablecoin");
     } else if (state.feeLiquidity.loading) {
       setLiquidityStatus("add", "Loading pool data");
+    } else if (!amountValid) {
+      setLiquidityStatus("add", "Enter a valid amount");
+    } else if (!balanceEnough) {
+      setLiquidityStatus("add", "Insufficient pathUSD balance");
     } else {
       setLiquidityStatus("add", "Ready to add liquidity");
     }
@@ -979,6 +1147,18 @@ function updateUI() {
     }
   }
 
+  if (connected && hasStablecoin && !state.alphaTransfer.statusLocked) {
+    if (!state.alphaTransfer.poolReady) {
+      setAlphaStatus("Pool needs liquidity with pathUSD");
+    } else if (!isAddress(elements.alphaRecipientInput?.value.trim() || "")) {
+      setAlphaStatus("Enter a valid address");
+    } else if (state.alphaTransfer.pending) {
+      setAlphaStatus("Awaiting passkey confirmation");
+    } else {
+      setAlphaStatus("Ready to send");
+    }
+  }
+
 
   if (state.stablecoin?.issuerRoleGranted) {
     setMessage("grant", "Issuer role granted");
@@ -989,6 +1169,13 @@ function updateUI() {
       ? "Remove Issuer Role"
       : "Grant Issuer Role";
   }
+
+  elements.alphaAmountButtons.forEach((button) => {
+    const value = Number(button.dataset.alphaAmount);
+    button.classList.toggle("is-active", value === state.alphaTransfer.amount);
+    button.disabled =
+      !connected || !hasStablecoin || state.alphaTransfer.pending || !state.alphaTransfer.poolReady;
+  });
 
   if (elements.grantButton) {
     elements.grantButton.textContent = state.stablecoin?.issuerRoleGranted
@@ -1098,8 +1285,15 @@ function handleAccountChange(account) {
 
   state.account = nextAccount;
   if (!nextAccount) {
-    clearManagedStablecoins();
-    resetWorkflow();
+  clearManagedStablecoins();
+  resetWorkflow();
+  if (elements.carouselTrack) {
+    elements.carouselCards = Array.from(
+      elements.carouselTrack.querySelectorAll("[data-card]")
+    );
+  }
+  updateCarousel();
+
     updateUI();
     return;
   }
@@ -1462,6 +1656,10 @@ async function init() {
     grant: null,
     mint: null,
   };
+  state.alphaTransfer.amount = 50;
+  state.alphaTransfer.pending = false;
+  state.alphaTransfer.poolReady = false;
+  state.alphaTransfer.statusLocked = false;
   clearManagedStablecoins();
   resetWorkflow();
 
@@ -1507,19 +1705,7 @@ async function init() {
       setSelectedStablecoin(target.value);
     });
   }
-  elements.feeValidatorSelects.forEach((select) => {
-    select.value = state.feeLiquidity.validatorToken;
-    select.addEventListener("change", (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLSelectElement)) return;
-      state.feeLiquidity.validatorToken = target.value;
-      state.feeLiquidity.addStatusLocked = false;
-      state.feeLiquidity.removeStatusLocked = false;
-      syncValidatorSelects();
-      void loadFeeLiquidityData();
-      updateUI();
-    });
-  });
+
   if (elements.feeAddButton) {
     elements.feeAddButton.addEventListener("click", addFeeLiquidity);
   }
@@ -1529,12 +1715,40 @@ async function init() {
   if (elements.feeAddAmount) {
     elements.feeAddAmount.addEventListener("input", () => {
       state.feeLiquidity.addStatusLocked = false;
+      void loadFeeLiquidityData();
     });
   }
   if (elements.feeRemoveAmount) {
     elements.feeRemoveAmount.addEventListener("input", () => {
       state.feeLiquidity.removeStatusLocked = false;
     });
+  }
+  elements.alphaAmountButtons.forEach((button) => {
+    if (Number(button.dataset.alphaAmount) === state.alphaTransfer.amount) {
+      button.classList.add("is-active");
+    }
+    button.addEventListener("click", () => {
+      const value = Number(button.dataset.alphaAmount);
+      if (!Number.isFinite(value)) return;
+      state.alphaTransfer.amount = value;
+      state.alphaTransfer.statusLocked = false;
+      elements.alphaAmountButtons.forEach((btn) => {
+        btn.classList.toggle("is-active", btn === button);
+      });
+      setAlphaStatus("Ready to send");
+      updateUI();
+    });
+  });
+  if (elements.alphaRecipientInput) {
+    elements.alphaRecipientInput.value = DEFAULT_ALPHA_RECIPIENT;
+    elements.alphaRecipientInput.addEventListener("input", () => {
+      state.alphaTransfer.statusLocked = false;
+      setAlphaStatus("Ready to send");
+      updateUI();
+    });
+  }
+  if (elements.alphaSendButton) {
+    elements.alphaSendButton.addEventListener("click", sendAlphaUsd);
   }
   elements.createForm.addEventListener("submit", createStablecoin);
   elements.grantButton.addEventListener("click", () => {
@@ -1567,13 +1781,13 @@ async function init() {
   }
   if (elements.carouselNext) {
     elements.carouselNext.addEventListener("click", () => {
-      const maxIndex = Math.max(0, elements.carouselCards.length - 3);
-      state.carouselIndex = Math.min(maxIndex, state.carouselIndex + 1);
+      state.carouselIndex = state.carouselIndex + 1;
       updateCarousel();
     });
   }
   window.addEventListener("resize", updateCarousel);
-  updateCarousel();
+  requestAnimationFrame(updateCarousel);
+  setTimeout(updateCarousel, 50);
 
   if (elements.activityToggle) {
     elements.activityToggle.addEventListener("click", () => {
