@@ -1668,7 +1668,7 @@ async function mintStablecoins(event) {
       fireConfetti();
       if (state.stablecoin?.id) {
         setTimeout(() => {
-          void loadTotalSupply(state.stablecoin.id);
+          void loadSelectedStablecoinBalance();
         }, 1000);
       }
     } else if (receipt === null) {
